@@ -4,7 +4,7 @@ from jose import jwt
 from sqlalchemy.orm import Session
 from app.core.database import SessionLocal
 from app.models.user import User
-from app.utils.jwt import SECRET_KEY, ALGORITHM
+from app.core.config import settings
 from fastapi import HTTPException
 from app.models.user import User
 
@@ -20,7 +20,7 @@ def get_db():
 def get_current_user(token: str = Depends(oauth2_scheme),
                      db: Session = Depends(get_db)):
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         user_id = payload.get("id")
     except:
         raise HTTPException(status_code=401, detail="Invalid token")
