@@ -34,38 +34,23 @@ def create_booking(
 
 
 @router.get("/my")
+@router.get("/my")
 def my_bookings(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # Ensure ID is correct type
-    user_id = int(current_user.id)
+    print("Logged in user ID:", current_user.id)
 
-    bookings = (
-        db.query(Booking)
-        .filter(Booking.user_id == user_id)
-        .all()
-    )
+    all_bookings = db.query(Booking).all()
+    print("All bookings in DB:", [(b.id, b.user_id) for b in all_bookings])
 
-    if not bookings:
-        return []
+    bookings = db.query(Booking).filter(
+        Booking.user_id == current_user.id
+    ).all()
 
-    result = []
+    print("Filtered bookings:", [(b.id, b.user_id) for b in bookings])
 
-    for booking in bookings:
-        service = db.query(Service).filter(
-            Service.id == booking.service_id
-        ).first()
-
-        result.append({
-            "id": booking.id,
-            "service_name": service.name if service else "Unknown",
-            "date": booking.date,
-            "time": booking.time,
-            "status": booking.status
-        })
-
-    return result
+    return bookings
 
 
 @router.get("/professional")
