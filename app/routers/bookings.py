@@ -38,23 +38,31 @@ def my_bookings(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    bookings = db.query(Booking).filter(
-        Booking.user_id == current_user.id
-    ).all()
+    # Ensure ID is correct type
+    user_id = int(current_user.id)
+
+    bookings = (
+        db.query(Booking)
+        .filter(Booking.user_id == user_id)
+        .all()
+    )
+
+    if not bookings:
+        return []
 
     result = []
 
-    for b in bookings:
+    for booking in bookings:
         service = db.query(Service).filter(
-            Service.id == b.service_id
+            Service.id == booking.service_id
         ).first()
 
         result.append({
-            "id": b.id,
-            "service_name": service.name if service else None,
-            "date": b.date,
-            "time": b.time,
-            "status": b.status
+            "id": booking.id,
+            "service_name": service.name if service else "Unknown",
+            "date": booking.date,
+            "time": booking.time,
+            "status": booking.status
         })
 
     return result
