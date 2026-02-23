@@ -1,8 +1,9 @@
 from jose import jwt
 from datetime import datetime, timedelta
+from app.core.config import settings
 
-SECRET_KEY = "supersecret"
-ALGORITHM = "HS256"
+SECRET_KEY = settings.SECRET_KEY
+ALGORITHM = settings.ALGORITHM
 
 def create_token(data: dict):
     to_encode = data.copy()
