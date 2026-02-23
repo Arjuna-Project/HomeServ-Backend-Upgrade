@@ -1,0 +1,42 @@
+# =============================
+# Python
+# =============================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual Environment
+myenv/
+venv/
+.env/
+.env
+
+# Environment variables
+.env
+.env.*
+
+# Database files (if using SQLite)
+*.db
+*.sqlite3
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
+
+# Pytest
+.pytest_cache/
+
+# Migrations (optional if using alembic)
+# migrations/versions/*.pyc
+
+# Coverage
+htmlcov/
+.coverage
