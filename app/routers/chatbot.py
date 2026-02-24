@@ -194,7 +194,7 @@ def handle_text(user_message: str, user_id: Optional[int]):
             result = tool_get_user_bookings(user_id)
 
         elif function_name == "get_booking_status":
-            result = tool_get_booking_status(user_id, arguments.get["booking_id"])
+            result = tool_get_booking_status(user_id, arguments.get("booking_id"))
 
         else:
             result = "Tool not recognized."
