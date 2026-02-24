@@ -138,7 +138,6 @@ def handle_text(user_message: str, user_id: Optional[int]):
         },
         json={
             "model": "openai/gpt-4o-mini",
-            "max_tokens": 500,
             "messages": [
                 {
                     "role": "system",
@@ -231,6 +230,7 @@ Respond ONLY in JSON:
         },
         json={
             "model": "openai/gpt-4o-mini",
+            "max_tokens": 500,
             "messages": [
                 {
                     "role": "user",
