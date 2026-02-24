@@ -138,6 +138,8 @@ def handle_text(user_message: str, user_id: Optional[int]):
         },
         json={
             "model": "openai/gpt-4o-mini",
+            "max_tokens": 300,
+            "temperature": 0.3,
             "messages": [
                 {
                     "role": "system",
@@ -248,7 +250,13 @@ Respond ONLY in JSON:
     )
 
     if response.status_code != 200:
-        raise HTTPException(status_code=500, detail=response.text)
+        error_data = response.json()
+        return {
+            "type": "error",
+            "reply": error_data.get("error", {}).get(
+                "message", "AI service unavailable."
+            ),
+        }
 
     ai_reply = response.json()["choices"][0]["message"]["content"]
 
