@@ -124,12 +124,12 @@ def tool_get_booking_status(user_id: int, booking_id: int):
 
 def handle_text(user_message: str, user_id: Optional[int]):
 
-    # 1️⃣ DB search first
+    # DB search first
     db_reply = search_services(user_message)
     if db_reply:
         return {"type": "text", "reply": db_reply}
 
-    # 2️⃣ AI with MCP tools
+    # AI with MCP tools
     response = requests.post(
         "https://openrouter.ai/api/v1/chat/completions",
         headers={
@@ -184,7 +184,7 @@ def handle_text(user_message: str, user_id: Optional[int]):
     choice = data.get("choices", [{}])[0]
     message = choice.get("message", {})
 
-    # 3️⃣ Check if tool call happened
+    # Check if tool call happened
     tool_calls = message.get("tool_calls")
 
     if tool_calls:
@@ -203,7 +203,7 @@ def handle_text(user_message: str, user_id: Optional[int]):
 
         return {"type": "text", "reply": result}
 
-    # 4️⃣ Normal AI reply
+    # Normal AI reply
     ai_reply = message.get("content", "")
 
     return {"type": "text", "reply": ai_reply or "How can I assist you?"}
