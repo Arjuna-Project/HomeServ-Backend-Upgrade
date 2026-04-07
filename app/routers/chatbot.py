@@ -2,7 +2,7 @@ import os
 import json
 import re
 import requests
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional
 from sqlalchemy.orm import Session
@@ -11,22 +11,21 @@ from app.core.database import SessionLocal
 from app.models.service import Service
 from app.models.category import Category
 from app.models.booking import Booking
+from app.utils.dependencies import get_current_user
 
 router = APIRouter(prefix="/chat", tags=["Chatbot"])
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 
+# Request schema
 class ChatRequest(BaseModel):
     message: Optional[str] = ""
     image: Optional[str] = None
     user_id: Optional[int] = None
 
 
-from fastapi import Depends
-from app.utils.dependencies import get_current_user
-
-
+# Main route
 @router.post("/")
 def chat_with_bot(req: ChatRequest, current_user=Depends(get_current_user)):
 
@@ -42,18 +41,52 @@ def chat_with_bot(req: ChatRequest, current_user=Depends(get_current_user)):
     return handle_text(req.message, current_user.id)
 
 
-def search_services(message: str):
+# Detect user intent
+def detect_intent(message: str):
+    msg = message.lower()
 
+    if any(word in msg for word in ["booking", "my bookings", "my orders"]):
+        return "booking"
+
+    if any(word in msg for word in ["status", "track"]):
+        return "booking_status"
+
+    return "general"
+
+
+# Extract category from message dynamically
+def extract_category_from_message(message: str):
     db: Session = SessionLocal()
+
+    try:
+        msg = message.lower()
+        categories = db.query(Category).all()
+
+        for category in categories:
+            if category.name.lower() in msg:
+                return category.name
+
+        return None
+
+    finally:
+        db.close()
+
+
+# Search services from database
+def search_services(message: str):
+    db: Session = SessionLocal()
+
     try:
         message = message.lower()
 
-        # Category match
+        # Match category
         categories = db.query(Category).all()
         for category in categories:
             if category.name.lower() in message:
                 services = (
-                    db.query(Service).filter(Service.category_id == category.id).all()
+                    db.query(Service)
+                    .filter(Service.category_id == category.id)
+                    .all()
                 )
 
                 if services:
@@ -67,7 +100,7 @@ def search_services(message: str):
                         "Reply with the service name to book."
                     )
 
-        # Service match
+        # Match individual service
         services = db.query(Service).all()
         for service in services:
             if service.name.lower() in message:
@@ -78,26 +111,53 @@ def search_services(message: str):
                 )
 
         return None
+
     finally:
         db.close()
 
 
-def tool_get_user_bookings(user_id: int):
-
+# Get user bookings with optional category filter
+def tool_get_user_bookings(user_id: int, message: str = ""):
     db: Session = SessionLocal()
+
     try:
         bookings = db.query(Booking).filter(Booking.user_id == user_id).all()
-        print("CHATBOT USER ID:", user_id)
+
         if not bookings:
             return "You have no bookings."
+
+        category_filter = extract_category_from_message(message)
+
+        filtered = []
+
+        for b in bookings:
+            if not b.service:
+                continue
+
+            service_name = b.service.name.lower()
+            category_name = (
+                b.service.category.name.lower()
+                if b.service.category else ""
+            )
+
+            # If category mentioned, filter
+            if category_filter:
+                if category_filter.lower() in category_name:
+                    filtered.append(b)
+            else:
+                filtered.append(b)
+
+        if not filtered:
+            return "No bookings found for this category."
 
         return "\n\n".join(
             [
                 f"Booking ID: {b.id}\n"
+                f"Service: {b.service.name}\n"
                 f"Date: {b.date}\n"
                 f"Time: {b.time}\n"
                 f"Status: {b.status}"
-                for b in bookings
+                for b in filtered
             ]
         )
 
@@ -105,8 +165,10 @@ def tool_get_user_bookings(user_id: int):
         db.close()
 
 
+# Get booking status
 def tool_get_booking_status(user_id: int, booking_id: int):
     db: Session = SessionLocal()
+
     try:
         booking = (
             db.query(Booking)
@@ -118,18 +180,36 @@ def tool_get_booking_status(user_id: int, booking_id: int):
             return "Booking not found."
 
         return f"Booking ID {booking.id} status: {booking.status}"
+
     finally:
         db.close()
 
 
+# Handle text messages
 def handle_text(user_message: str, user_id: Optional[int]):
 
-    # DB search first
+    intent = detect_intent(user_message)
+
+    # Handle booking requests
+    if intent == "booking":
+        return {
+            "type": "text",
+            "reply": tool_get_user_bookings(user_id, user_message)
+        }
+
+    # Handle booking status
+    if intent == "booking_status":
+        return {
+            "type": "text",
+            "reply": "Please provide booking ID to check status."
+        }
+
+    # Service search
     db_reply = search_services(user_message)
     if db_reply:
         return {"type": "text", "reply": db_reply}
 
-    # AI with MCP tools
+    # AI fallback
     response = requests.post(
         "https://openrouter.ai/api/v1/chat/completions",
         headers={
@@ -138,40 +218,17 @@ def handle_text(user_message: str, user_id: Optional[int]):
         },
         json={
             "model": "openai/gpt-4o-mini",
-            "max_tokens": 300,
             "temperature": 0.3,
+            "max_tokens": 300,
             "messages": [
                 {
                     "role": "system",
                     "content": (
-                        "You are HomeServ assistant.\n"
-                        "You can call tools to fetch booking data.\n"
-                        "Use tools when user asks about bookings."
+                        "You are HomeServ assistant. "
+                        "Help users with services and bookings."
                     ),
                 },
                 {"role": "user", "content": user_message},
-            ],
-            "tools": [
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "get_user_bookings",
-                        "description": "Get all bookings for logged in user",
-                        "parameters": {"type": "object", "properties": {}},
-                    },
-                },
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "get_booking_status",
-                        "description": "Get booking status by ID",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {"booking_id": {"type": "integer"}},
-                            "required": ["booking_id"],
-                        },
-                    },
-                },
             ],
         },
         timeout=30,
@@ -181,34 +238,12 @@ def handle_text(user_message: str, user_id: Optional[int]):
         raise HTTPException(status_code=500, detail=response.text)
 
     data = response.json()
-    choice = data.get("choices", [{}])[0]
-    message = choice.get("message", {})
-
-    # Check if tool call happened
-    tool_calls = message.get("tool_calls")
-
-    if tool_calls:
-        tool_call = tool_calls[0]
-        function_name = tool_call["function"]["name"]
-        arguments = json.loads(tool_call["function"].get("arguments", "{}"))
-
-        if function_name == "get_user_bookings":
-            result = tool_get_user_bookings(user_id)
-
-        elif function_name == "get_booking_status":
-            result = tool_get_booking_status(user_id, arguments.get("booking_id"))
-
-        else:
-            result = "Tool not recognized."
-
-        return {"type": "text", "reply": result}
-
-    # Normal AI reply
-    ai_reply = message.get("content", "")
+    ai_reply = data.get("choices", [{}])[0].get("message", {}).get("content", "")
 
     return {"type": "text", "reply": ai_reply or "How can I assist you?"}
 
 
+# Handle image input
 def handle_image(req: ChatRequest):
 
     prompt = """
@@ -250,13 +285,7 @@ Respond ONLY in JSON:
     )
 
     if response.status_code != 200:
-        error_data = response.json()
-        return {
-            "type": "error",
-            "reply": error_data.get("error", {}).get(
-                "message", "AI service unavailable."
-            ),
-        }
+        return {"type": "error", "reply": "AI service unavailable."}
 
     ai_reply = response.json()["choices"][0]["message"]["content"]
 
@@ -267,7 +296,6 @@ Respond ONLY in JSON:
 
     if ai_data.get("diy_safe") is True:
         requirements = "\n".join([f"- {r}" for r in ai_data.get("requirements", [])])
-
         steps = "\n".join(
             [f"{i+1}. {s}" for i, s in enumerate(ai_data.get("steps", []))]
         )
@@ -275,7 +303,7 @@ Respond ONLY in JSON:
         return {
             "type": "diy",
             "reply": (
-                f"Issue identified: {ai_data.get('issue')}\n\n"
+                f"Issue: {ai_data.get('issue')}\n\n"
                 f"Requirements:\n{requirements}\n\n"
                 f"Steps:\n{steps}"
             ),
@@ -284,12 +312,13 @@ Respond ONLY in JSON:
     return {
         "type": "risky",
         "reply": (
-            f"Issue identified: {ai_data.get('issue')}\n\n"
-            "This issue is risky. Please book a professional."
+            f"Issue: {ai_data.get('issue')}\n\n"
+            "This is risky. Please book a professional."
         ),
     }
 
 
+# Extract JSON from AI response
 def extract_json(text: str):
     match = re.search(r"\{[\s\S]*\}", text)
     if not match:
